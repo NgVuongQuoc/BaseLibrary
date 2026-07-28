@@ -5,13 +5,7 @@ Reusable iOS base utilities and UIKit/Foundation extensions.
 ## Install From Git
 
 ```ruby
-pod 'BaseLibrary', :git => 'https://github.com/kingdom/BaseLibrary.git', :tag => '0.1.0'
-```
-
-## Install From Local Path
-
-```ruby
-pod 'BaseLibrary', :path => './InternalSports/Screens/BaseLibrary'
+pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.1.0'
 ```
 
 ## Release A New Version
