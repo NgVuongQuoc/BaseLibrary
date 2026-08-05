@@ -14,7 +14,7 @@ public extension Date {
         return calendar.date(from: dateComponents)!
     }
     
-    public func convertToTring() -> String{
+    public func convertToString() -> String{
         let format = DateFormatter()
         format.timeZone = .current
         format.dateFormat = "yyyy-MM-dd"
