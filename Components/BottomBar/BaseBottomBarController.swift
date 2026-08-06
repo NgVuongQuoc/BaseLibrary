@@ -87,6 +87,10 @@ open class BaseBottomBarController: UIViewController {
 
     public var bottomBarConfiguration: BaseBottomBarConfiguration = .init() {
         didSet {
+            if bottomBarConfiguration.usesAMTossStyle {
+                bottomBarHeight = 60
+                contentTransition = .none
+            }
             baseBottomBar.configuration = bottomBarConfiguration
             updateBottomSafeAreaAppearance()
         }

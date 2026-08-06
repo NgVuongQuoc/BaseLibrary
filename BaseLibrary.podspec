@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'BaseLibrary'
-  s.version          = '0.3.0'
+  s.version          = '0.3.1'
   s.summary          = 'Reusable iOS base utilities and UIKit extensions.'
   s.description      = <<-DESC
 BaseLibrary contains shared UIKit/Foundation helpers, app constants, image/file utilities,
@@ -9,7 +9,8 @@ and view-controller conveniences for reuse across iOS projects.
 
   s.homepage         = 'https://github.com/NgVuongQuoc/BaseLibrary'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
-  s.author           = { 'NgVuongQuoc' => 'ngvuongquoc@gmail.com' }
+  s.preserve_paths   = 'LICENSE', 'THIRD_PARTY_NOTICES.md'
+  s.author           = { 'NgVuongQuoc' => 'vuongquoc2002@gmail.com' }
   s.source           = { :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => s.version.to_s }
 
   s.ios.deployment_target = '13.0'

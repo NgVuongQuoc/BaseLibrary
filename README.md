@@ -80,11 +80,27 @@ bottomBarConfiguration.selectionAnimation = .ease(duration: 0.25)
 bottomBarConfiguration.selectionAnimation = .fade(duration: 0.2)
 bottomBarConfiguration.selectionAnimation = .spring(duration: 0.45, dampingRatio: 0.72)
 bottomBarConfiguration.selectionAnimation = .bounce(duration: 0.4)
-bottomBarConfiguration.selectionAnimation = .toss(duration: 0.55, height: 28)
+bottomBarConfiguration.selectionAnimation = .toss
 ```
 
 Use `bounce` for a squash-and-release effect at the destination. Use `toss` when
 the circle should travel upward in an arc and then land on the selected tab.
+
+For the complete toss preset, only choose its colors and whether titles appear:
+
+```swift
+bottomBarConfiguration = .toss(
+    backgroundColor: .systemYellow,
+    indicatorColor: .systemBlue,
+    selectedItemColor: .white,
+    normalItemColor: .secondaryLabel,
+    showsTitles: true
+)
+```
+
+The complete preset reproduces AMTabView's original sizing, ball trajectory,
+two-phase notch transition, tint timing, 60-point bar, safe-area fill, and
+immediate child-controller switch. Its durations and geometry are internal.
 
 Content transitions:
 
@@ -133,6 +149,11 @@ bottomBarConfiguration.appearance.backgroundStyle = .liquidGlass(
 )
 ```
 
+`flat` and `notched` are bottom-attached styles: their corner radius applies to
+the two top corners while the background continues through the device safe area.
+Use `floating` when all four corners should be rounded with transparent space
+under the bar.
+
 `liquidGlass` automatically uses UIKit's native `UIGlassEffect` when built with
 Xcode 26 and run on iOS 26. It falls back when built with an older Xcode or when
 running on iOS 13–25. Available fallbacks are `.systemUltraThinMaterial`,
@@ -158,7 +179,7 @@ updateTabItem(updatedItem, at: 0)
 ## Install From Git
 
 ```ruby
-pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.0'
+pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.1'
 ```
 
 ## Release A New Version
@@ -168,8 +189,13 @@ pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :ta
 3. Create a matching git tag, for example:
 
 ```sh
-git tag 0.2.0
+git tag 0.3.1
 git push origin main --tags
 ```
 
 Apps can then point to that tag in their `Podfile`.
+
+## Third-Party Notices
+
+The complete toss preset is adapted from AMTabView 0.1.2 under the MIT license.
+See `THIRD_PARTY_NOTICES.md` for the required copyright and license notice.

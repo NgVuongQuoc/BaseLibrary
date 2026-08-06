@@ -80,7 +80,7 @@ public enum BaseBottomBarSelectionAnimation {
     case fade(duration: TimeInterval)
     case spring(duration: TimeInterval, dampingRatio: CGFloat)
     case bounce(duration: TimeInterval)
-    case toss(duration: TimeInterval, height: CGFloat)
+    case toss
 }
 
 public enum BaseBottomBarHapticFeedback {
@@ -184,6 +184,51 @@ public struct BaseBottomBarConfiguration {
     }
 }
 
+public extension BaseBottomBarConfiguration {
+    static func toss(
+        backgroundColor: UIColor = .white,
+        indicatorColor: UIColor = UIColor(
+            red: 0.7529411765,
+            green: 0.4470588235,
+            blue: 0.5960784314,
+            alpha: 1
+        ),
+        selectedItemColor: UIColor = .white,
+        normalItemColor: UIColor = .black,
+        showsTitles: Bool = false
+    ) -> BaseBottomBarConfiguration {
+        BaseBottomBarConfiguration(
+            appearance: BaseBottomBarAppearance(
+                backgroundStyle: .notched(
+                    notchDiameter: 64,
+                    cornerRadius: 0
+                ),
+                indicatorStyle: .circle(diameter: 48),
+                backgroundColor: backgroundColor,
+                indicatorColor: indicatorColor,
+                selectedItemColor: selectedItemColor,
+                normalItemColor: normalItemColor,
+                showsTitles: showsTitles,
+                shadowOpacity: 0
+            ),
+            selectionAnimation: .toss,
+            hapticFeedback: .none,
+            allowsReselection: false
+        )
+    }
+}
+
+extension BaseBottomBarConfiguration {
+    var usesAMTossStyle: Bool {
+        guard case .toss = selectionAnimation,
+              case .notched = appearance.backgroundStyle,
+              case .circle = appearance.indicatorStyle else {
+            return false
+        }
+        return true
+    }
+}
+
 @MainActor
 public protocol BaseBottomBarDelegate: AnyObject {
     func baseBottomBar(
@@ -229,6 +274,7 @@ public final class BaseBottomBar: UIControl {
     private var activeAnimator: UIViewPropertyAnimator?
     private var reduceTransparencyObserver: NSObjectProtocol?
     private var hasLaidOutContent = false
+    private var tossAnimationGeneration = 0
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -349,6 +395,9 @@ public final class BaseBottomBar: UIControl {
         stackView.frame = contentFrame()
         stackView.layoutIfNeeded()
 
+        let layoutAppearance = resolvedItemAppearance()
+        itemButtons.forEach { $0.apply(appearance: layoutAppearance) }
+
         glassBackgroundView.frame = backgroundContentFrame()
         glassBackgroundView.layer.cornerRadius = backgroundCornerRadius
 
@@ -358,7 +407,12 @@ public final class BaseBottomBar: UIControl {
                 ? configuration.appearance.actionItemVerticalOffset
                 : 0
 
-            if index == selectedIndex,
+            if configuration.usesAMTossStyle,
+               index == selectedIndex,
+               button.item.role == .tab {
+                iconVerticalOffset = -(layoutAppearance.iconSize.height / 8)
+                    - button.defaultIconMinY
+            } else if index == selectedIndex,
                button.item.role == .tab,
                case .circle = configuration.appearance.indicatorStyle {
                 let indicatorCenter = convert(
@@ -394,6 +448,7 @@ public final class BaseBottomBar: UIControl {
         clipsToBounds = false
         isAccessibilityElement = false
 
+        backgroundLayer.name = "BaseLibrary.BaseBottomBar.background"
         backgroundLayer.fillRule = .evenOdd
         layer.addSublayer(backgroundLayer)
 
@@ -499,6 +554,8 @@ public final class BaseBottomBar: UIControl {
 
         let oldIndicatorFrame = presentedIndicatorFrame ?? indicatorView.frame
         let oldBackgroundPath = presentedBackgroundPath ?? backgroundLayer.path
+        tossAnimationGeneration += 1
+        backgroundLayer.removeAllAnimations()
         refreshButtonSelectionState()
         setNeedsLayout()
 
@@ -576,19 +633,25 @@ public final class BaseBottomBar: UIControl {
                 }
             }
 
-        case let .toss(duration, height):
+        case .toss:
             animateTossIndicator(
-                duration: duration,
-                height: height,
+                from: oldIndicatorFrame,
                 destinationFrame: destinationFrame
             )
         }
 
-        animateBackgroundPath(
-            from: oldBackgroundPath,
-            to: destinationPath,
-            duration: animationDuration
-        )
+        if configuration.usesAMTossStyle {
+            animateTossBackground(
+                from: oldBackgroundPath,
+                to: destinationPath
+            )
+        } else {
+            animateBackgroundPath(
+                from: oldBackgroundPath,
+                to: destinationPath,
+                duration: animationDuration
+            )
+        }
     }
 
     private func animateIndicator(
@@ -609,61 +672,87 @@ public final class BaseBottomBar: UIControl {
     }
 
     private func animateTossIndicator(
-        duration: TimeInterval,
-        height: CGFloat,
+        from startFrame: CGRect,
         destinationFrame: CGRect
     ) {
-        let safeDuration = clampedDuration(duration)
-        guard safeDuration > 0 else {
-            indicatorView.frame = destinationFrame
-            indicatorView.alpha = indicatorVisibility
-            return
-        }
-
-        let startCenter = indicatorView.center
-        let destinationCenter = CGPoint(
-            x: destinationFrame.midX,
-            y: destinationFrame.midY
-        )
-        let apex = CGPoint(
-            x: (startCenter.x + destinationCenter.x) / 2,
-            y: min(startCenter.y, destinationCenter.y) - max(0, height)
+        let path = BaseBottomBarTossEngine.ballPath(
+            fromX: startFrame.midX,
+            toX: destinationFrame.midX,
+            in: bounds,
+            numberOfTabs: items.count
         )
 
+        indicatorView.frame = destinationFrame
         indicatorView.alpha = indicatorVisibility
-        UIView.animateKeyframes(
-            withDuration: safeDuration,
+        let animation = CAKeyframeAnimation(
+            keyPath: #keyPath(CALayer.position)
+        )
+        animation.path = path
+        animation.duration = BaseBottomBarTossEngine.ballDuration
+        animation.fillMode = .both
+        animation.isRemovedOnCompletion = false
+        animation.timingFunctions = [
+            CAMediaTimingFunction(name: .easeOut)
+        ]
+        indicatorView.layer.add(
+            animation,
+            forKey: "BaseLibrary.BottomBar.toss.ball"
+        )
+
+        UIView.animate(
+            withDuration: BaseBottomBarTossEngine.tintAndIconDuration,
             delay: 0,
-            options: [
-                .beginFromCurrentState,
-                .allowUserInteraction,
-                .calculationModeCubic
-            ]
+            options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.48) {
-                self.indicatorView.center = apex
-                self.indicatorView.transform = CGAffineTransform(
-                    scaleX: 0.92,
-                    y: 1.08
-                )
-                self.finishIconTransitions()
-            }
-            UIView.addKeyframe(withRelativeStartTime: 0.48, relativeDuration: 0.36) {
-                self.indicatorView.center = destinationCenter
-                self.indicatorView.transform = CGAffineTransform(
-                    scaleX: 1.14,
-                    y: 0.86
-                )
-            }
-            UIView.addKeyframe(withRelativeStartTime: 0.84, relativeDuration: 0.16) {
-                self.indicatorView.center = destinationCenter
-                self.indicatorView.transform = .identity
-            }
+            self.finishIconTransitions()
         }
     }
 
     private func finishIconTransitions() {
         itemButtons.forEach { $0.finishIconTransition() }
+    }
+
+    private func animateTossBackground(
+        from oldPath: CGPath?,
+        to destinationPath: CGPath?
+    ) {
+        guard let oldPath, let destinationPath else { return }
+        let rectanglePath = BaseBottomBarTossEngine.fullRectangle(in: bounds)
+        let animationGeneration = tossAnimationGeneration
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self,
+                  self.tossAnimationGeneration == animationGeneration else {
+                return
+            }
+            let revealAnimation = CABasicAnimation(
+                keyPath: #keyPath(CAShapeLayer.path)
+            )
+            revealAnimation.fromValue = rectanglePath
+            revealAnimation.toValue = destinationPath
+            revealAnimation.fillMode = .both
+            revealAnimation.isRemovedOnCompletion = false
+            revealAnimation.duration = BaseBottomBarTossEngine.shapePhaseDuration
+            self.backgroundLayer.add(
+                revealAnimation,
+                forKey: "BaseLibrary.BottomBar.toss.background"
+            )
+        }
+
+        let flattenAnimation = CABasicAnimation(
+            keyPath: #keyPath(CAShapeLayer.path)
+        )
+        flattenAnimation.fromValue = oldPath
+        flattenAnimation.toValue = rectanglePath
+        flattenAnimation.fillMode = .both
+        flattenAnimation.isRemovedOnCompletion = false
+        flattenAnimation.duration = BaseBottomBarTossEngine.shapePhaseDuration
+        backgroundLayer.add(
+            flattenAnimation,
+            forKey: "BaseLibrary.BottomBar.toss.background"
+        )
+        CATransaction.commit()
     }
 
     private func animateBackgroundPath(
@@ -698,6 +787,18 @@ public final class BaseBottomBar: UIControl {
         items.indices.contains(index)
             && items[index].role == .tab
             && items[index].isEnabled
+    }
+
+    private func resolvedItemAppearance() -> BaseBottomBarAppearance {
+        var appearance = configuration.appearance
+        guard configuration.usesAMTossStyle else { return appearance }
+
+        let iconSize = BaseBottomBarTossEngine.metrics(
+            in: bounds,
+            numberOfTabs: items.count
+        ).iconSize
+        appearance.iconSize = CGSize(width: iconSize, height: iconSize)
+        return appearance
     }
 
     private func contentFrame() -> CGRect {
@@ -739,10 +840,7 @@ public final class BaseBottomBar: UIControl {
 
         switch appearance.backgroundStyle {
         case let .flat(cornerRadius):
-            path = UIBezierPath(
-                roundedRect: bounds,
-                cornerRadius: max(0, cornerRadius)
-            )
+            path = makeBottomAttachedPath(cornerRadius: cornerRadius)
 
         case let .floating(horizontalInset, cornerRadius):
             let rect = bounds.insetBy(dx: max(0, horizontalInset), dy: 0)
@@ -759,25 +857,106 @@ public final class BaseBottomBar: UIControl {
             )
 
         case let .notched(notchDiameter, cornerRadius):
-            path = UIBezierPath(
-                roundedRect: bounds,
-                cornerRadius: max(0, cornerRadius)
+            path = makeNotchedPath(
+                notchDiameter: notchDiameter,
+                cornerRadius: cornerRadius
             )
-            if let centerX = selectedItemCenterX(), notchDiameter > 0 {
-                let diameter = min(max(0, notchDiameter), bounds.width)
-                let cutout = UIBezierPath(
-                    ovalIn: CGRect(
-                        x: centerX - diameter / 2,
-                        y: -diameter * 0.58,
-                        width: diameter,
-                        height: diameter
-                    )
-                )
-                path.append(cutout)
-                path.usesEvenOddFillRule = true
-            }
         }
         return path
+    }
+
+    private func makeBottomAttachedPath(cornerRadius: CGFloat) -> UIBezierPath {
+        let radius = resolvedTopCornerRadius(cornerRadius)
+        return UIBezierPath(
+            roundedRect: bounds,
+            byRoundingCorners: [.topLeft, .topRight],
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+    }
+
+    private func makeNotchedPath(
+        notchDiameter: CGFloat,
+        cornerRadius: CGFloat
+    ) -> UIBezierPath {
+        if configuration.usesAMTossStyle, let selectedIndex {
+            return UIBezierPath(
+                cgPath: BaseBottomBarTossEngine.notchPath(
+                    selectedIndex: selectedIndex,
+                    in: bounds,
+                    numberOfTabs: items.count
+                )
+            )
+        }
+
+        guard bounds.width > 0, bounds.height > 0,
+              let itemCenterX = selectedItemCenterX(),
+              notchDiameter > 0 else {
+            return makeBottomAttachedPath(cornerRadius: cornerRadius)
+        }
+
+        let radius = resolvedTopCornerRadius(cornerRadius)
+        let centerX = min(max(itemCenterX, radius), bounds.width - radius)
+        let diameter = min(max(0, notchDiameter), bounds.width)
+        let selectedIndicatorFrame = indicatorFrame(for: selectedIndex)
+        let desiredHalfWidth = max(
+            diameter * 0.78,
+            selectedIndicatorFrame.width * 0.95
+        )
+        let notchStartX = max(radius, centerX - desiredHalfWidth)
+        let notchEndX = min(bounds.width - radius, centerX + desiredHalfWidth)
+        let leftSpan = max(0, centerX - notchStartX)
+        let rightSpan = max(0, notchEndX - centerX)
+        let notchDepth = min(
+            bounds.height * 0.72,
+            max(diameter * 0.52, selectedIndicatorFrame.maxY + 5)
+        )
+
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: 0, y: bounds.height))
+        path.addLine(to: CGPoint(x: 0, y: radius))
+        path.addQuadCurve(
+            to: CGPoint(x: radius, y: 0),
+            controlPoint: .zero
+        )
+        path.addLine(to: CGPoint(x: notchStartX, y: 0))
+        path.addCurve(
+            to: CGPoint(x: centerX, y: notchDepth),
+            controlPoint1: CGPoint(
+                x: notchStartX + leftSpan * 0.38,
+                y: 0
+            ),
+            controlPoint2: CGPoint(
+                x: centerX - leftSpan * 0.42,
+                y: notchDepth
+            )
+        )
+        path.addCurve(
+            to: CGPoint(x: notchEndX, y: 0),
+            controlPoint1: CGPoint(
+                x: centerX + rightSpan * 0.42,
+                y: notchDepth
+            ),
+            controlPoint2: CGPoint(
+                x: notchEndX - rightSpan * 0.38,
+                y: 0
+            )
+        )
+        path.addLine(to: CGPoint(x: bounds.width - radius, y: 0))
+        path.addQuadCurve(
+            to: CGPoint(x: bounds.width, y: radius),
+            controlPoint: CGPoint(x: bounds.width, y: 0)
+        )
+        path.addLine(to: CGPoint(x: bounds.width, y: bounds.height))
+        path.close()
+        return path
+    }
+
+    private func resolvedTopCornerRadius(_ requestedRadius: CGFloat) -> CGFloat {
+        min(
+            max(0, requestedRadius),
+            bounds.width / 2,
+            bounds.height / 2
+        )
     }
 
     private var isLiquidGlassBackground: Bool {
@@ -919,10 +1098,22 @@ public final class BaseBottomBar: UIControl {
             return .zero
 
         case let .circle(diameter):
-            let size = max(0, diameter)
+            let size: CGFloat
+            let originY: CGFloat
+            if configuration.usesAMTossStyle {
+                let metrics = BaseBottomBarTossEngine.metrics(
+                    in: bounds,
+                    numberOfTabs: items.count
+                )
+                size = metrics.ballSize
+                originY = -size * 0.25
+            } else {
+                size = max(0, diameter)
+                originY = -size * 0.36
+            }
             return CGRect(
                 x: center.x - size / 2,
-                y: -size * 0.36,
+                y: originY,
                 width: size,
                 height: size
             )
@@ -978,9 +1169,10 @@ public final class BaseBottomBar: UIControl {
         case let .ease(duration),
              let .fade(duration),
              let .spring(duration, _),
-             let .bounce(duration),
-             let .toss(duration, _):
+             let .bounce(duration):
             return clampedDuration(duration)
+        case .toss:
+            return BaseBottomBarTossEngine.ballDuration
         }
     }
 
@@ -1141,6 +1333,10 @@ private final class BaseBottomBarItemButton: UIControl {
 
     var defaultIconCenterY: CGFloat {
         defaultIconFrame.midY
+    }
+
+    var defaultIconMinY: CGFloat {
+        defaultIconFrame.minY
     }
 
     func prepareIconTransition(fromVerticalOffset oldVerticalOffset: CGFloat) {
