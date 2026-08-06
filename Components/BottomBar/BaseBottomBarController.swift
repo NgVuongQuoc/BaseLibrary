@@ -78,33 +78,49 @@ open class BaseBottomBarController: UIViewController {
     public private(set) var selectedIndex: Int?
     public private(set) var isBottomBarHidden = false
 
-    public var bottomBarHeight: CGFloat = 64 {
-        didSet {
+    public var bottomBarHeight: CGFloat {
+        get { storedBottomBarHeight }
+        set {
+            storedBottomBarHeight = newValue
+            hasCustomizedBottomBarHeight = true
             guard !isBottomBarHidden else { return }
-            bottomBarHeightConstraint?.constant = max(1, bottomBarHeight)
+            bottomBarHeightConstraint?.constant = max(1, newValue)
         }
     }
 
     public var bottomBarConfiguration: BaseBottomBarConfiguration = .init() {
         didSet {
             if bottomBarConfiguration.usesAMTossStyle {
-                bottomBarHeight = 60
-                contentTransition = .none
+                if !hasCustomizedBottomBarHeight {
+                    applyPresetBottomBarHeight(60)
+                }
+                if !hasCustomizedContentTransition {
+                    storedContentTransition = .none
+                }
             }
             baseBottomBar.configuration = bottomBarConfiguration
             updateBottomSafeAreaAppearance()
         }
     }
 
-    public var contentTransition: BaseBottomBarContentTransition = .crossDissolve(
-        duration: 0.2
-    )
+    public var contentTransition: BaseBottomBarContentTransition {
+        get { storedContentTransition }
+        set {
+            storedContentTransition = newValue
+            hasCustomizedContentTransition = true
+        }
+    }
 
     private let contentContainerView = UIView()
     private let bottomSafeAreaFillView = UIView()
     private weak var visibleViewController: UIViewController?
     private var bottomBarHeightConstraint: NSLayoutConstraint?
     private var isTransitioningContent = false
+    private var storedBottomBarHeight: CGFloat = 64
+    private var storedContentTransition: BaseBottomBarContentTransition =
+        .crossDissolve(duration: 0.2)
+    private var hasCustomizedBottomBarHeight = false
+    private var hasCustomizedContentTransition = false
 
     open override func viewDidLoad() {
         super.viewDidLoad()
@@ -216,6 +232,12 @@ open class BaseBottomBarController: UIViewController {
     open func bottomBarDidSelectTab(at index: Int) {}
     open func bottomBarDidReselectTab(at index: Int) {}
     open func bottomBarDidTriggerAction(at index: Int) {}
+
+    private func applyPresetBottomBarHeight(_ height: CGFloat) {
+        storedBottomBarHeight = height
+        guard !isBottomBarHidden else { return }
+        bottomBarHeightConstraint?.constant = max(1, height)
+    }
 
     private func setUpLayout() {
         view.backgroundColor = .systemBackground

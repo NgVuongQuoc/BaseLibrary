@@ -261,11 +261,26 @@ final class BaseBottomBarTests: XCTestCase {
         } else {
             XCTFail("The complete toss preset must not add haptic feedback")
         }
-        XCTAssertFalse(controller.bottomBarConfiguration.allowsReselection)
+        XCTAssertTrue(controller.bottomBarConfiguration.allowsReselection)
         if case .none = controller.contentTransition {
             // Matches AMTabsViewController's immediate content replacement.
         } else {
             XCTFail("The complete toss preset must disable content transitions")
+        }
+    }
+
+    func testTossPresetPreservesExplicitControllerOverrides() {
+        let controller = BaseBottomBarController()
+        controller.bottomBarHeight = 10
+        controller.contentTransition = .crossDissolve(duration: 0.35)
+
+        controller.bottomBarConfiguration = .toss()
+
+        XCTAssertEqual(controller.bottomBarHeight, 10)
+        if case let .crossDissolve(duration) = controller.contentTransition {
+            XCTAssertEqual(duration, 0.35, accuracy: 0.001)
+        } else {
+            XCTFail("The toss preset must preserve an explicit content transition")
         }
     }
 
@@ -383,6 +398,45 @@ final class BaseBottomBarTests: XCTestCase {
         XCTAssertNotNil(flattenAnimation.toValue)
     }
 
+    func testTappingSelectedTossItemJumpsAndReportsReselection() throws {
+        let bottomBar = BaseBottomBar(
+            frame: CGRect(x: 0, y: 0, width: 390, height: 60)
+        )
+        let delegate = BottomBarDelegateSpy()
+        bottomBar.delegate = delegate
+        bottomBar.configuration = .toss()
+        bottomBar.setItems((0..<5).map { _ in
+            BaseBottomBarItem(image: UIImage())
+        }, selectedIndex: 0)
+        bottomBar.layoutIfNeeded()
+
+        let selectedButton = try XCTUnwrap(bottomBar.subviews
+            .flatMap(\.subviews)
+            .first {
+                $0.accessibilityIdentifier == "BaseLibrary.BaseBottomBar.item.0"
+            } as? UIControl)
+        bottomBar.handleItemTap(at: 0)
+
+        let indicator = try XCTUnwrap(bottomBar.subviews.first {
+            $0.accessibilityIdentifier == "BaseLibrary.BaseBottomBar.indicator"
+        })
+        XCTAssertEqual(delegate.reselectedIndices, [0])
+        let jumpAnimation = try XCTUnwrap(
+            indicator.layer.animation(
+                forKey: "BaseLibrary.BottomBar.toss.reselection.ball"
+            ) as? CAKeyframeAnimation
+        )
+        let itemJumpAnimation = try XCTUnwrap(
+            selectedButton.layer.animation(
+                forKey: "BaseLibrary.BottomBar.toss.reselection.item"
+            ) as? CAKeyframeAnimation
+        )
+
+        XCTAssertEqual(jumpAnimation.duration, 0.4, accuracy: 0.001)
+        XCTAssertEqual(jumpAnimation.values?.count, 3)
+        XCTAssertEqual(itemJumpAnimation.duration, 0.4, accuracy: 0.001)
+    }
+
     private func makeGeometryTestBottomBar(
         backgroundStyle: BaseBottomBarBackgroundStyle
     ) -> BaseBottomBar {
@@ -479,8 +533,13 @@ final class BaseBottomBarTests: XCTestCase {
 @MainActor
 private final class BottomBarDelegateSpy: BaseBottomBarDelegate {
     private(set) var selectedIndices: [Int] = []
+    private(set) var reselectedIndices: [Int] = []
 
     func baseBottomBar(_ bottomBar: BaseBottomBar, didSelectItemAt index: Int) {
         selectedIndices.append(index)
+    }
+
+    func baseBottomBar(_ bottomBar: BaseBottomBar, didReselectItemAt index: Int) {
+        reselectedIndices.append(index)
     }
 }

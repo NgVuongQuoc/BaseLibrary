@@ -213,7 +213,7 @@ public extension BaseBottomBarConfiguration {
             ),
             selectionAnimation: .toss,
             hapticFeedback: .none,
-            allowsReselection: false
+            allowsReselection: true
         )
     }
 }
@@ -519,8 +519,12 @@ public final class BaseBottomBar: UIControl {
 
     @objc
     private func didTapItem(_ sender: BaseBottomBarItemButton) {
-        let index = sender.tag
+        handleItemTap(at: sender.tag)
+    }
+
+    func handleItemTap(at index: Int) {
         guard items.indices.contains(index), items[index].isEnabled else { return }
+        let sender = itemButtons[index]
 
         performHapticFeedback()
         if items[index].role == .action {
@@ -1211,6 +1215,12 @@ public final class BaseBottomBar: UIControl {
 
     private func animateReselection(_ button: UIView) {
         guard shouldAnimate(requested: true) else { return }
+
+        if configuration.usesAMTossStyle {
+            animateTossReselection(button)
+            return
+        }
+
         UIView.animateKeyframes(
             withDuration: 0.32,
             delay: 0,
@@ -1223,6 +1233,34 @@ public final class BaseBottomBar: UIControl {
                 button.transform = .identity
             }
         }
+    }
+
+    private func animateTossReselection(_ button: UIView) {
+        let rise = max(24, indicatorView.bounds.height * 0.8)
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        animation.values = [0, -rise, 0]
+        animation.keyTimes = [0, 0.45, 1]
+        animation.timingFunctions = [
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .easeIn)
+        ]
+        animation.duration = BaseBottomBarTossEngine.ballDuration
+        animation.isAdditive = true
+
+        indicatorView.layer.removeAnimation(
+            forKey: "BaseLibrary.BottomBar.toss.reselection.ball"
+        )
+        button.layer.removeAnimation(
+            forKey: "BaseLibrary.BottomBar.toss.reselection.item"
+        )
+        indicatorView.layer.add(
+            animation,
+            forKey: "BaseLibrary.BottomBar.toss.reselection.ball"
+        )
+        button.layer.add(
+            animation,
+            forKey: "BaseLibrary.BottomBar.toss.reselection.item"
+        )
     }
 
     private func animateRejectedSelection(_ button: UIView) {

@@ -100,7 +100,17 @@ bottomBarConfiguration = .toss(
 
 The complete preset reproduces AMTabView's original sizing, ball trajectory,
 two-phase notch transition, tint timing, 60-point bar, safe-area fill, and
-immediate child-controller switch. Its durations and geometry are internal.
+immediate child-controller switch. Tapping the selected item makes the ball
+jump vertically and triggers `bottomBarDidReselectTab(at:)`.
+
+Set controller-level options before or after the preset to override its
+60-point height and immediate content switch:
+
+```swift
+bottomBarHeight = 72
+contentTransition = .crossDissolve(duration: 0.2)
+bottomBarConfiguration = .toss()
+```
 
 Content transitions:
 
@@ -179,7 +189,7 @@ updateTabItem(updatedItem, at: 0)
 ## Install From Git
 
 ```ruby
-pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.2'
+pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.3'
 ```
 
 ## Release A New Version
@@ -189,7 +199,7 @@ pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :ta
 3. Create a matching git tag, for example:
 
 ```sh
-git tag 0.3.2
+git tag 0.3.3
 git push origin main --tags
 ```
 

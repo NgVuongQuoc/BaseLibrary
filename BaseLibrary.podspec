@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'BaseLibrary'
-  s.version          = '0.3.2'
+  s.version          = '0.3.3'
   s.summary          = 'Reusable iOS base utilities and UIKit extensions.'
   s.description      = <<-DESC
 BaseLibrary contains shared UIKit/Foundation helpers, app constants, image/file utilities,
