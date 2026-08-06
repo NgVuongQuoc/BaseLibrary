@@ -449,7 +449,10 @@ public final class BaseBottomBar: UIControl {
         isAccessibilityElement = false
 
         backgroundLayer.name = "BaseLibrary.BaseBottomBar.background"
-        backgroundLayer.fillRule = .evenOdd
+        // AMTabView's two-phase toss path contains overlapping subpaths.
+        // Non-zero filling keeps the bar opaque while it flattens; even-odd
+        // would cancel the overlap and briefly reveal the view underneath.
+        backgroundLayer.fillRule = .nonZero
         layer.addSublayer(backgroundLayer)
 
         glassBackgroundView.isHidden = true

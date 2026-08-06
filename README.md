@@ -179,7 +179,7 @@ updateTabItem(updatedItem, at: 0)
 ## Install From Git
 
 ```ruby
-pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.1'
+pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.2'
 ```
 
 ## Release A New Version
@@ -189,7 +189,7 @@ pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :ta
 3. Create a matching git tag, for example:
 
 ```sh
-git tag 0.3.1
+git tag 0.3.2
 git push origin main --tags
 ```
 

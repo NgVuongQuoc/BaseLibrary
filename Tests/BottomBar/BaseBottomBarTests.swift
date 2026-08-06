@@ -312,6 +312,11 @@ final class BaseBottomBarTests: XCTestCase {
         XCTAssertPointEqual(notchElements[3].points[2], CGPoint(x: 62.4, y: 19.5))
         XCTAssertPointEqual(notchElements[4].points[0], CGPoint(x: 70.2, y: 0))
         XCTAssertPointEqual(notchElements[4].points[1], CGPoint(x: 101.4, y: 0))
+
+        let rectanglePath = BaseBottomBarTossEngine.fullRectangle(in: bounds)
+        let centerPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+        XCTAssertTrue(rectanglePath.contains(centerPoint, using: .winding))
+        XCTAssertFalse(rectanglePath.contains(centerPoint, using: .evenOdd))
     }
 
     func testTossPresetUsesDynamicBallAndIconSizes() throws {
@@ -371,6 +376,7 @@ final class BaseBottomBarTests: XCTestCase {
             ) as? CABasicAnimation
         )
 
+        XCTAssertEqual(backgroundLayer.fillRule, .nonZero)
         XCTAssertEqual(ballAnimation.duration, 0.4, accuracy: 0.001)
         XCTAssertNotNil(ballAnimation.path)
         XCTAssertEqual(flattenAnimation.duration, 0.2, accuracy: 0.001)
