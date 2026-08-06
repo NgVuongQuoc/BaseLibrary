@@ -88,7 +88,7 @@ open class BaseBottomBarController: UIViewController {
     public var bottomBarConfiguration: BaseBottomBarConfiguration = .init() {
         didSet {
             baseBottomBar.configuration = bottomBarConfiguration
-            bottomSafeAreaFillView.backgroundColor = bottomBarConfiguration.appearance.backgroundColor
+            updateBottomSafeAreaAppearance()
         }
     }
 
@@ -224,7 +224,10 @@ open class BaseBottomBarController: UIViewController {
 
         baseBottomBar.delegate = self
         baseBottomBar.configuration = bottomBarConfiguration
-        bottomSafeAreaFillView.backgroundColor = bottomBarConfiguration.appearance.backgroundColor
+        bottomSafeAreaFillView.isUserInteractionEnabled = false
+        bottomSafeAreaFillView.accessibilityIdentifier =
+            "BaseLibrary.BaseBottomBar.safeAreaFill"
+        updateBottomSafeAreaAppearance()
 
         let heightConstraint = baseBottomBar.heightAnchor.constraint(
             equalToConstant: max(1, bottomBarHeight)
@@ -247,6 +250,16 @@ open class BaseBottomBarController: UIViewController {
             bottomSafeAreaFillView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomSafeAreaFillView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func updateBottomSafeAreaAppearance() {
+        switch bottomBarConfiguration.appearance.backgroundStyle {
+        case .floating, .liquidGlass:
+            bottomSafeAreaFillView.backgroundColor = .clear
+        case .flat, .notched:
+            bottomSafeAreaFillView.backgroundColor =
+                bottomBarConfiguration.appearance.backgroundColor
+        }
     }
 
     private func applyTabs(initialIndex: Int?) {

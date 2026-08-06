@@ -12,6 +12,19 @@ public enum BaseBottomBarItemRole {
     case action
 }
 
+public enum BaseBottomBarGlassStyle {
+    case regular
+    case clear
+}
+
+public enum BaseBottomBarGlassFallback {
+    case systemUltraThinMaterial
+    case systemThinMaterial
+    case systemMaterial
+    case systemThickMaterial
+    case solid(UIColor)
+}
+
 public struct BaseBottomBarItem {
     public var image: UIImage
     public var selectedImage: UIImage?
@@ -44,6 +57,14 @@ public enum BaseBottomBarBackgroundStyle {
     case flat(cornerRadius: CGFloat)
     case floating(horizontalInset: CGFloat, cornerRadius: CGFloat)
     case notched(notchDiameter: CGFloat, cornerRadius: CGFloat)
+    case liquidGlass(
+        horizontalInset: CGFloat = 16,
+        cornerRadius: CGFloat = 28,
+        style: BaseBottomBarGlassStyle = .regular,
+        tintColor: UIColor? = nil,
+        isInteractive: Bool = true,
+        fallback: BaseBottomBarGlassFallback = .systemMaterial
+    )
 }
 
 public enum BaseBottomBarIndicatorStyle {
@@ -59,6 +80,7 @@ public enum BaseBottomBarSelectionAnimation {
     case fade(duration: TimeInterval)
     case spring(duration: TimeInterval, dampingRatio: CGFloat)
     case bounce(duration: TimeInterval)
+    case toss(duration: TimeInterval, height: CGFloat)
 }
 
 public enum BaseBottomBarHapticFeedback {
@@ -200,10 +222,12 @@ public final class BaseBottomBar: UIControl {
     public private(set) var selectedIndex: Int?
 
     private let backgroundLayer = CAShapeLayer()
+    private let glassBackgroundView = UIVisualEffectView()
     private let indicatorView = UIView()
     private let stackView = UIStackView()
     private var itemButtons: [BaseBottomBarItemButton] = []
     private var activeAnimator: UIViewPropertyAnimator?
+    private var reduceTransparencyObserver: NSObjectProtocol?
     private var hasLaidOutContent = false
 
     public override init(frame: CGRect) {
@@ -218,6 +242,9 @@ public final class BaseBottomBar: UIControl {
 
     deinit {
         activeAnimator?.stopAnimation(true)
+        if let reduceTransparencyObserver {
+            NotificationCenter.default.removeObserver(reduceTransparencyObserver)
+        }
     }
 
     public func setItems(_ items: [BaseBottomBarItem], selectedIndex: Int? = nil) {
@@ -319,6 +346,36 @@ public final class BaseBottomBar: UIControl {
         super.layoutSubviews()
         guard bounds.width > 0, bounds.height > 0 else { return }
 
+        stackView.frame = contentFrame()
+        stackView.layoutIfNeeded()
+
+        glassBackgroundView.frame = backgroundContentFrame()
+        glassBackgroundView.layer.cornerRadius = backgroundCornerRadius
+
+        let destinationIndicatorFrame = indicatorFrame(for: selectedIndex)
+        itemButtons.enumerated().forEach { index, button in
+            var iconVerticalOffset = button.item.role == .action
+                ? configuration.appearance.actionItemVerticalOffset
+                : 0
+
+            if index == selectedIndex,
+               button.item.role == .tab,
+               case .circle = configuration.appearance.indicatorStyle {
+                let indicatorCenter = convert(
+                    CGPoint(
+                        x: destinationIndicatorFrame.midX,
+                        y: destinationIndicatorFrame.midY
+                    ),
+                    to: button
+                )
+                iconVerticalOffset = indicatorCenter.y - button.defaultIconCenterY
+            }
+
+            button.iconVerticalOffset = iconVerticalOffset
+            button.setNeedsLayout()
+            button.layoutIfNeeded()
+        }
+
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let backgroundPath = makeBackgroundPath().cgPath
@@ -327,15 +384,7 @@ public final class BaseBottomBar: UIControl {
         backgroundLayer.shadowPath = backgroundPath
         CATransaction.commit()
 
-        stackView.frame = contentFrame()
-        stackView.layoutIfNeeded()
-        itemButtons.forEach { button in
-            button.verticalOffset = button.item.role == .action
-                ? configuration.appearance.actionItemVerticalOffset
-                : 0
-            button.setNeedsLayout()
-        }
-        indicatorView.frame = indicatorFrame(for: selectedIndex)
+        indicatorView.frame = destinationIndicatorFrame
         configureIndicatorShape()
         hasLaidOutContent = true
     }
@@ -348,7 +397,16 @@ public final class BaseBottomBar: UIControl {
         backgroundLayer.fillRule = .evenOdd
         layer.addSublayer(backgroundLayer)
 
+        glassBackgroundView.isHidden = true
+        glassBackgroundView.isUserInteractionEnabled = false
+        glassBackgroundView.clipsToBounds = true
+        glassBackgroundView.layer.cornerCurve = .continuous
+        glassBackgroundView.accessibilityIdentifier =
+            "BaseLibrary.BaseBottomBar.liquidGlass"
+        addSubview(glassBackgroundView)
+
         indicatorView.isUserInteractionEnabled = false
+        indicatorView.accessibilityIdentifier = "BaseLibrary.BaseBottomBar.indicator"
         addSubview(indicatorView)
 
         stackView.axis = .horizontal
@@ -356,6 +414,14 @@ public final class BaseBottomBar: UIControl {
         stackView.distribution = .fillEqually
         stackView.spacing = 0
         addSubview(stackView)
+
+        reduceTransparencyObserver = NotificationCenter.default.addObserver(
+            forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyAppearance()
+        }
         applyAppearance()
     }
 
@@ -368,6 +434,7 @@ public final class BaseBottomBar: UIControl {
         itemButtons = items.enumerated().map { index, item in
             let button = BaseBottomBarItemButton(item: item)
             button.tag = index
+            button.accessibilityIdentifier = "BaseLibrary.BaseBottomBar.item.\(index)"
             button.isEnabled = item.isEnabled
             button.addTarget(self, action: #selector(didTapItem(_:)), for: .touchUpInside)
             button.apply(appearance: configuration.appearance)
@@ -379,11 +446,14 @@ public final class BaseBottomBar: UIControl {
 
     private func applyAppearance() {
         let appearance = configuration.appearance
-        backgroundLayer.fillColor = appearance.backgroundColor.cgColor
+        backgroundLayer.fillColor = isLiquidGlassBackground
+            ? UIColor.clear.cgColor
+            : appearance.backgroundColor.cgColor
         backgroundLayer.shadowColor = appearance.shadowColor.cgColor
         backgroundLayer.shadowOpacity = appearance.shadowOpacity
         backgroundLayer.shadowRadius = max(0, appearance.shadowRadius)
         backgroundLayer.shadowOffset = appearance.shadowOffset
+        configureGlassBackground()
         indicatorView.backgroundColor = appearance.indicatorColor
         itemButtons.forEach { $0.apply(appearance: appearance) }
         refreshButtonSelectionState()
@@ -419,13 +489,16 @@ public final class BaseBottomBar: UIControl {
     }
 
     private func updateSelection(animated: Bool) {
+        let presentedIndicatorFrame = indicatorView.layer.presentation()?.frame
+        let presentedBackgroundPath = backgroundLayer.presentation()?.path
+        let oldIconVerticalOffsets = itemButtons.map(\.iconVerticalOffset)
         activeAnimator?.stopAnimation(true)
         activeAnimator = nil
         indicatorView.layer.removeAllAnimations()
         indicatorView.transform = .identity
 
-        let oldIndicatorFrame = indicatorView.layer.presentation()?.frame ?? indicatorView.frame
-        let oldBackgroundPath = backgroundLayer.presentation()?.path ?? backgroundLayer.path
+        let oldIndicatorFrame = presentedIndicatorFrame ?? indicatorView.frame
+        let oldBackgroundPath = presentedBackgroundPath ?? backgroundLayer.path
         refreshButtonSelectionState()
         setNeedsLayout()
 
@@ -439,6 +512,11 @@ public final class BaseBottomBar: UIControl {
         let destinationFrame = indicatorView.frame
         let destinationPath = backgroundLayer.path
         indicatorView.frame = oldIndicatorFrame
+        itemButtons.enumerated().forEach { index, button in
+            button.prepareIconTransition(
+                fromVerticalOffset: oldIconVerticalOffsets[index]
+            )
+        }
 
         switch configuration.selectionAnimation {
         case .none:
@@ -460,7 +538,7 @@ public final class BaseBottomBar: UIControl {
                 curve: .easeInOut
             ) {
                 self.indicatorView.alpha = self.indicatorVisibility
-                self.stackView.layoutIfNeeded()
+                self.finishIconTransitions()
             }
             activeAnimator = animator
             animator.startAnimation()
@@ -476,7 +554,7 @@ public final class BaseBottomBar: UIControl {
             animator.addAnimations {
                 self.indicatorView.frame = destinationFrame
                 self.indicatorView.alpha = self.indicatorVisibility
-                self.stackView.layoutIfNeeded()
+                self.finishIconTransitions()
             }
             activeAnimator = animator
             animator.startAnimation()
@@ -491,12 +569,19 @@ public final class BaseBottomBar: UIControl {
             ) {
                 UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.55) {
                     self.indicatorView.transform = CGAffineTransform(scaleX: 1.18, y: 0.82)
-                    self.stackView.layoutIfNeeded()
+                    self.finishIconTransitions()
                 }
                 UIView.addKeyframe(withRelativeStartTime: 0.55, relativeDuration: 0.45) {
                     self.indicatorView.transform = .identity
                 }
             }
+
+        case let .toss(duration, height):
+            animateTossIndicator(
+                duration: duration,
+                height: height,
+                destinationFrame: destinationFrame
+            )
         }
 
         animateBackgroundPath(
@@ -517,10 +602,68 @@ public final class BaseBottomBar: UIControl {
         ) {
             self.indicatorView.frame = destinationFrame
             self.indicatorView.alpha = self.indicatorVisibility
-            self.stackView.layoutIfNeeded()
+            self.finishIconTransitions()
         }
         activeAnimator = animator
         animator.startAnimation()
+    }
+
+    private func animateTossIndicator(
+        duration: TimeInterval,
+        height: CGFloat,
+        destinationFrame: CGRect
+    ) {
+        let safeDuration = clampedDuration(duration)
+        guard safeDuration > 0 else {
+            indicatorView.frame = destinationFrame
+            indicatorView.alpha = indicatorVisibility
+            return
+        }
+
+        let startCenter = indicatorView.center
+        let destinationCenter = CGPoint(
+            x: destinationFrame.midX,
+            y: destinationFrame.midY
+        )
+        let apex = CGPoint(
+            x: (startCenter.x + destinationCenter.x) / 2,
+            y: min(startCenter.y, destinationCenter.y) - max(0, height)
+        )
+
+        indicatorView.alpha = indicatorVisibility
+        UIView.animateKeyframes(
+            withDuration: safeDuration,
+            delay: 0,
+            options: [
+                .beginFromCurrentState,
+                .allowUserInteraction,
+                .calculationModeCubic
+            ]
+        ) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.48) {
+                self.indicatorView.center = apex
+                self.indicatorView.transform = CGAffineTransform(
+                    scaleX: 0.92,
+                    y: 1.08
+                )
+                self.finishIconTransitions()
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.48, relativeDuration: 0.36) {
+                self.indicatorView.center = destinationCenter
+                self.indicatorView.transform = CGAffineTransform(
+                    scaleX: 1.14,
+                    y: 0.86
+                )
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.84, relativeDuration: 0.16) {
+                self.indicatorView.center = destinationCenter
+                self.indicatorView.transform = .identity
+            }
+        }
+    }
+
+    private func finishIconTransitions() {
+        itemButtons.forEach { $0.finishIconTransition() }
     }
 
     private func animateBackgroundPath(
@@ -560,10 +703,34 @@ public final class BaseBottomBar: UIControl {
     private func contentFrame() -> CGRect {
         let insets = configuration.appearance.contentInsets
         var frame = bounds.inset(by: insets)
-        if case let .floating(horizontalInset, _) = configuration.appearance.backgroundStyle {
+        switch configuration.appearance.backgroundStyle {
+        case let .floating(horizontalInset, _),
+             let .liquidGlass(horizontalInset, _, _, _, _, _):
             frame = frame.insetBy(dx: max(0, horizontalInset), dy: 0)
+        case .flat, .notched:
+            break
         }
         return frame
+    }
+
+    private func backgroundContentFrame() -> CGRect {
+        switch configuration.appearance.backgroundStyle {
+        case let .floating(horizontalInset, _),
+             let .liquidGlass(horizontalInset, _, _, _, _, _):
+            return bounds.insetBy(dx: max(0, horizontalInset), dy: 0)
+        case .flat, .notched:
+            return bounds
+        }
+    }
+
+    private var backgroundCornerRadius: CGFloat {
+        switch configuration.appearance.backgroundStyle {
+        case let .flat(cornerRadius),
+             let .floating(_, cornerRadius),
+             let .notched(_, cornerRadius),
+             let .liquidGlass(_, cornerRadius, _, _, _, _):
+            return max(0, cornerRadius)
+        }
     }
 
     private func makeBackgroundPath() -> UIBezierPath {
@@ -578,6 +745,13 @@ public final class BaseBottomBar: UIControl {
             )
 
         case let .floating(horizontalInset, cornerRadius):
+            let rect = bounds.insetBy(dx: max(0, horizontalInset), dy: 0)
+            path = UIBezierPath(
+                roundedRect: rect,
+                cornerRadius: max(0, cornerRadius)
+            )
+
+        case let .liquidGlass(horizontalInset, cornerRadius, _, _, _, _):
             let rect = bounds.insetBy(dx: max(0, horizontalInset), dy: 0)
             path = UIBezierPath(
                 roundedRect: rect,
@@ -604,6 +778,130 @@ public final class BaseBottomBar: UIControl {
             }
         }
         return path
+    }
+
+    private var isLiquidGlassBackground: Bool {
+        if case .liquidGlass = configuration.appearance.backgroundStyle {
+            return true
+        }
+        return false
+    }
+
+    private func configureGlassBackground() {
+        guard case let .liquidGlass(
+            _,
+            _,
+            style,
+            tintColor,
+            isInteractive,
+            fallback
+        ) = configuration.appearance.backgroundStyle else {
+            glassBackgroundView.isHidden = true
+            glassBackgroundView.effect = nil
+            glassBackgroundView.backgroundColor = .clear
+            glassBackgroundView.contentView.backgroundColor = .clear
+            return
+        }
+
+        glassBackgroundView.isHidden = false
+        glassBackgroundView.backgroundColor = .clear
+        glassBackgroundView.contentView.backgroundColor = .clear
+
+        #if compiler(>=6.2)
+            if #available(iOS 26.0, *) {
+                glassBackgroundView.effect = makeGlassEffect(
+                    style: style,
+                    tintColor: tintColor,
+                    isInteractive: isInteractive
+                )
+                return
+            }
+        #endif
+
+        configureGlassFallback(fallback, tintColor: tintColor)
+    }
+
+    #if compiler(>=6.2)
+    @available(iOS 26.0, *)
+    private func makeGlassEffect(
+        style: BaseBottomBarGlassStyle,
+        tintColor: UIColor?,
+        isInteractive: Bool
+    ) -> UIGlassEffect {
+        let systemStyle: UIGlassEffect.Style
+        switch style {
+        case .regular:
+            systemStyle = .regular
+        case .clear:
+            systemStyle = .clear
+        }
+
+        let effect = UIGlassEffect(style: systemStyle)
+        effect.tintColor = tintColor
+        effect.isInteractive = isInteractive
+        return effect
+    }
+    #endif
+
+    private func configureGlassFallback(
+        _ fallback: BaseBottomBarGlassFallback,
+        tintColor: UIColor?
+    ) {
+        if UIAccessibility.isReduceTransparencyEnabled {
+            glassBackgroundView.effect = nil
+            glassBackgroundView.backgroundColor = reducedTransparencyColor(
+                for: fallback,
+                tintColor: tintColor
+            )
+            return
+        }
+
+        switch fallback {
+        case let .solid(color):
+            glassBackgroundView.effect = nil
+            glassBackgroundView.backgroundColor = color
+
+        case .systemUltraThinMaterial,
+             .systemThinMaterial,
+             .systemMaterial,
+             .systemThickMaterial:
+            glassBackgroundView.effect = UIBlurEffect(
+                style: blurStyle(for: fallback)
+            )
+            glassBackgroundView.contentView.backgroundColor = fallbackTintColor(
+                tintColor
+            )
+        }
+    }
+
+    private func blurStyle(
+        for fallback: BaseBottomBarGlassFallback
+    ) -> UIBlurEffect.Style {
+        switch fallback {
+        case .systemUltraThinMaterial:
+            return .systemUltraThinMaterial
+        case .systemThinMaterial:
+            return .systemThinMaterial
+        case .systemMaterial, .solid:
+            return .systemMaterial
+        case .systemThickMaterial:
+            return .systemThickMaterial
+        }
+    }
+
+    private func fallbackTintColor(_ tintColor: UIColor?) -> UIColor? {
+        guard let tintColor else { return nil }
+        return tintColor.withAlphaComponent(min(tintColor.cgColor.alpha, 0.18))
+    }
+
+    private func reducedTransparencyColor(
+        for fallback: BaseBottomBarGlassFallback,
+        tintColor: UIColor?
+    ) -> UIColor {
+        if case let .solid(color) = fallback {
+            return color
+        }
+        return tintColor ?? configuration.appearance.backgroundColor
     }
 
     private func selectedItemCenterX() -> CGFloat? {
@@ -680,7 +978,8 @@ public final class BaseBottomBar: UIControl {
         case let .ease(duration),
              let .fade(duration),
              let .spring(duration, _),
-             let .bounce(duration):
+             let .bounce(duration),
+             let .toss(duration, _):
             return clampedDuration(duration)
         }
     }
@@ -768,7 +1067,7 @@ public final class BaseBottomBar: UIControl {
 
 private final class BaseBottomBarItemButton: UIControl {
     var item: BaseBottomBarItem
-    var verticalOffset: CGFloat = 0
+    var iconVerticalOffset: CGFloat = 0
 
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
@@ -816,22 +1115,16 @@ private final class BaseBottomBarItemButton: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let iconSize = CGSize(
-            width: max(0, appearance.iconSize.width),
-            height: max(0, appearance.iconSize.height)
-        )
-        let hasTitle = !titleLabel.isHidden
-        let contentHeight = iconSize.height + (hasTitle ? 16 : 0)
-        let startY = (bounds.height - contentHeight) / 2 + verticalOffset
+        let baseIconFrame = defaultIconFrame
         iconView.frame = CGRect(
-            x: (bounds.width - iconSize.width) / 2,
-            y: startY,
-            width: iconSize.width,
-            height: iconSize.height
+            x: baseIconFrame.minX,
+            y: baseIconFrame.minY + iconVerticalOffset,
+            width: baseIconFrame.width,
+            height: baseIconFrame.height
         )
         titleLabel.frame = CGRect(
             x: 2,
-            y: iconView.frame.maxY + 2,
+            y: baseIconFrame.maxY + 2,
             width: max(0, bounds.width - 4),
             height: 14
         )
@@ -846,12 +1139,44 @@ private final class BaseBottomBarItemButton: UIControl {
         badgeLabel.layer.cornerRadius = 9
     }
 
+    var defaultIconCenterY: CGFloat {
+        defaultIconFrame.midY
+    }
+
+    func prepareIconTransition(fromVerticalOffset oldVerticalOffset: CGFloat) {
+        let translationY = oldVerticalOffset - iconVerticalOffset
+        let translation = CGAffineTransform(translationX: 0, y: translationY)
+        iconView.transform = translation
+        badgeLabel.transform = translation
+    }
+
+    func finishIconTransition() {
+        iconView.transform = .identity
+        badgeLabel.transform = .identity
+    }
+
+    private var defaultIconFrame: CGRect {
+        let iconSize = CGSize(
+            width: max(0, appearance.iconSize.width),
+            height: max(0, appearance.iconSize.height)
+        )
+        let titleHeight: CGFloat = titleLabel.isHidden ? 0 : 16
+        let contentHeight = iconSize.height + titleHeight
+        return CGRect(
+            x: (bounds.width - iconSize.width) / 2,
+            y: (bounds.height - contentHeight) / 2,
+            width: iconSize.width,
+            height: iconSize.height
+        )
+    }
+
     private func setUp() {
         isAccessibilityElement = true
         accessibilityTraits = [.button]
 
         iconView.contentMode = .scaleAspectFit
         iconView.isUserInteractionEnabled = false
+        iconView.accessibilityIdentifier = "BaseLibrary.BaseBottomBar.icon"
         addSubview(iconView)
 
         titleLabel.textAlignment = .center

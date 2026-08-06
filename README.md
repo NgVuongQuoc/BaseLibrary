@@ -80,7 +80,11 @@ bottomBarConfiguration.selectionAnimation = .ease(duration: 0.25)
 bottomBarConfiguration.selectionAnimation = .fade(duration: 0.2)
 bottomBarConfiguration.selectionAnimation = .spring(duration: 0.45, dampingRatio: 0.72)
 bottomBarConfiguration.selectionAnimation = .bounce(duration: 0.4)
+bottomBarConfiguration.selectionAnimation = .toss(duration: 0.55, height: 28)
 ```
+
+Use `bounce` for a squash-and-release effect at the destination. Use `toss` when
+the circle should travel upward in an arc and then land on the selected tab.
 
 Content transitions:
 
@@ -119,7 +123,22 @@ bottomBarConfiguration.appearance.backgroundStyle = .notched(
     notchDiameter: 64,
     cornerRadius: 0
 )
+bottomBarConfiguration.appearance.backgroundStyle = .liquidGlass(
+    horizontalInset: 16,
+    cornerRadius: 28,
+    style: .regular,
+    tintColor: .systemOrange,
+    isInteractive: true,
+    fallback: .systemMaterial
+)
 ```
+
+`liquidGlass` automatically uses UIKit's native `UIGlassEffect` when built with
+Xcode 26 and run on iOS 26. It falls back when built with an older Xcode or when
+running on iOS 13–25. Available fallbacks are `.systemUltraThinMaterial`,
+`.systemThinMaterial`, `.systemMaterial`, `.systemThickMaterial`, and
+`.solid(UIColor)`. When Reduce Transparency is enabled on an older system, the
+bar uses a solid accessible background instead of blur.
 
 ### Runtime controls
 
@@ -139,7 +158,7 @@ updateTabItem(updatedItem, at: 0)
 ## Install From Git
 
 ```ruby
-pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.2.0'
+pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.0'
 ```
 
 ## Release A New Version
