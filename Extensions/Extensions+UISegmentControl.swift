@@ -1,6 +1,6 @@
 //
 //  Extensions+UISegmentControl.swift
-//  InternalSports
+//  BaseLibrary
 //
 //  Created by Nguyen Vuong Quoc on 12/6/26.
 //
