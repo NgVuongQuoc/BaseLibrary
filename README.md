@@ -186,10 +186,114 @@ updatedItem.title = "Dashboard"
 updateTabItem(updatedItem, at: 0)
 ```
 
+## Device and Duo display cases
+
+`DeviceDisplayType` exposes `.watch`, `.iPhone`, `.iPad`, `.duoInner`,
+`.duoOuter`, and `.unspecified`. The original raw values (`0`, `1`, `2`) and
+the Duo display values (`4`, `5`) remain unchanged. Raw value `3` is reserved.
+`allCases` lists all six values; `isDuo` includes the two Duo displays.
+Use `.unspecified` when the app cannot identify the hosting display, including
+when it knows the device is Duo but has not identified which display hosts the view.
+
+The idiom initializer classifies `.phone` as `.iPhone`, `.pad` as `.iPad`, and
+other idioms as `.unspecified`. It does **not** automatically identify Duo or its
+inner/outer display. A regular size class is not proof of Duo, and a compact
+window can be on the inner display. The `.watch` case is available for shared
+configuration; this UIKit pod does not add watchOS support.
+
+Provide the known display to each `BaseAdaptiveViewController` from the app's
+scene integration, updating it whenever that controller moves to another display:
+
+```swift
+// Configure the controllers belonging to the corresponding scenes.
+innerController.displayTypeOverride = .duoInner
+outerController.displayTypeOverride = .duoOuter
+
+// Hosting display not yet identified.
+controller.displayTypeOverride = .unspecified
+
+// Restore classification from the controller's current interface idiom.
+controller.displayTypeOverride = nil
+```
+
+These assignments are explicit configuration, not a hardware detector. Keep
+them local to the relevant controller/scene: both displays can present content
+simultaneously. Hinge angle or open/closed status alone does not identify the
+display hosting a particular view. The library does not map hardware model IDs
+or query iOS 27.1 APIs, so this API also builds with older SDKs.
+
+Read `context.displayType` in the adaptive callback. A display change triggers
+the callback on the next layout pass even if bounds and traits stay unchanged:
+
+```swift
+override func adaptiveLayoutDidChange(_ context: AdaptiveLayoutContext) {
+    switch context.displayType {
+    case .watch:
+        navigationItem.title = "Apple Watch"
+    case .iPhone:
+        navigationItem.title = "iPhone"
+    case .iPad:
+        navigationItem.title = "iPad"
+    case .duoInner:
+        navigationItem.title = "iPhone Duo — Inner display"
+    case .duoOuter:
+        navigationItem.title = "iPhone Duo — Outer display"
+    case .unspecified:
+        navigationItem.title = "Unknown display"
+    }
+
+    // Use context.layoutType and context.availableWidth to size the content.
+}
+```
+
+Existing exhaustive switches over `DeviceDisplayType` must handle the new cases.
+For native Duo integration, see Apple's [hinge and scene APIs](https://developer.apple.com/videos/play/tech-talks/111464/)
+and [adaptive layouts](https://developer.apple.com/videos/play/tech-talks/111463/).
+
+## Adaptive container layouts
+
+For screens that resize, subclass `BaseAdaptiveViewController`. It observes local
+bounds, safe area, size classes and Dynamic Type, skipping unchanged layout passes.
+Use `context.availableWidth` when the exact width matters: a resize does not always
+change the size class. For example, an existing grid screen can implement:
+
+```swift
+override func adaptiveLayoutDidChange(_ context: AdaptiveLayoutContext) {
+    guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
+        return
+    }
+    // Assumes collectionView fills this controller's safe area.
+    let spacing: CGFloat = 12
+    let width = max(0, context.availableWidth
+        - layout.sectionInset.left - layout.sectionInset.right)
+    let minimumWidth: CGFloat = context.preferredContentSizeCategory.isAccessibilityCategory ? 240 : 160
+    let columns = max(1, min(6, floor((width + spacing) / (minimumWidth + spacing))))
+    let itemWidth = max(0, (width - (columns - 1) * spacing) / columns)
+    let itemSize = CGSize(width: itemWidth, height: itemWidth)
+    if layout.itemSize != itemSize || layout.minimumInteritemSpacing != spacing {
+        layout.minimumInteritemSpacing = spacing
+        layout.itemSize = itemSize
+        layout.invalidateLayout()
+    }
+}
+```
+
+Create views and constraints once; update only their layout in this callback.
+Do not reload data or replace controllers during resizing, so selection and input
+state are retained. Handle content-specific scroll anchoring in the consuming app.
+UIKit's transition coordinator supplies animation timing when available. Continuous
+resizing follows normal layout passes without queuing custom animations; library
+layout updates suppress animation when Reduce Motion is enabled.
+
+Existing screens must adopt this controller to receive callbacks. This does not
+detect a hinge or assume model-specific folding APIs, and does not add watchOS,
+tvOS or native macOS support. The pod remains iOS 13+ in Swift 5 language mode;
+Swift 6 strict concurrency compatibility has not been validated.
+
 ## Install From Git
 
 ```ruby
-pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.3.3'
+pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :tag => '0.4.0'
 ```
 
 ## Release A New Version
@@ -199,7 +303,7 @@ pod 'BaseLibrary', :git => 'https://github.com/NgVuongQuoc/BaseLibrary.git', :ta
 3. Create a matching git tag, for example:
 
 ```sh
-git tag 0.3.3
+git tag 0.4.0
 git push origin main --tags
 ```
 

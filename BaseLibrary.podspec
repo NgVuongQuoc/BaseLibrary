@@ -1,10 +1,10 @@
 Pod::Spec.new do |s|
   s.name             = 'BaseLibrary'
-  s.version          = '0.3.3'
-  s.summary          = 'Reusable iOS base utilities and UIKit extensions.'
+  s.version          = '0.4.0'
+  s.summary          = 'Reusable iOS base utilities with adaptive UIKit and SwiftUI support.'
   s.description      = <<-DESC
-BaseLibrary contains shared UIKit/Foundation helpers, app constants, image/file utilities,
-and view-controller conveniences for reuse across iOS projects.
+BaseLibrary contains shared UIKit/Foundation helpers, adaptive layout utilities, app constants,
+image/file utilities, and view-controller conveniences for reuse across iPhone and iPad projects.
   DESC
 
   s.homepage         = 'https://github.com/NgVuongQuoc/BaseLibrary'
